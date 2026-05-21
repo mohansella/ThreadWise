@@ -38,6 +38,7 @@ import {
 } from "~/components/ui"
 import {
   DEFAULT_SETTINGS_ID,
+  buildGeneratedPrompt,
   createWatcherFromTemplate,
   getSettings,
   initializeDatabase,
@@ -94,6 +95,8 @@ type DashboardTab =
   | "Scan Activity"
   | "Settings"
 
+type WatcherSettingsMode = "create" | "edit"
+
 interface ThreadItem {
   score: AiScoreRecord
   post: RedditPostRecord
@@ -144,6 +147,8 @@ const negativeReasons: Array<{ value: NegativeFeedbackReason; label: string }> =
 export function Dashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTab>(readDashboardTabRoute)
   const [selectedWatcherId, setSelectedWatcherId] = useState<string>()
+  const [watcherSettingsMode, setWatcherSettingsMode] =
+    useState<WatcherSettingsMode>("edit")
   const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
@@ -211,6 +216,8 @@ export function Dashboard() {
   })
   const lastScan = scanRuns[0]
   const queueSummary = summarizeQueue(queueItems)
+  const creatingWatcher =
+    activeTab === "Settings" && watcherSettingsMode === "create"
 
   async function handleScanNow() {
     const watcher = selectedWatcher ?? watchers.find((item) => item.enabled) ?? watchers[0]
@@ -230,6 +237,16 @@ export function Dashboard() {
     writeDashboardTabRoute(tab)
   }
 
+  function openWatcherCreate() {
+    setWatcherSettingsMode("create")
+    changeTab("Settings")
+  }
+
+  function selectWatcher(watcherId: string) {
+    setSelectedWatcherId(watcherId)
+    setWatcherSettingsMode("edit")
+  }
+
   return (
     <main className="min-h-screen bg-graphite-950 text-zinc-100">
       <div className="flex min-h-screen">
@@ -246,7 +263,7 @@ export function Dashboard() {
 
           <Button
             className="mt-6 w-full"
-            onClick={() => changeTab("Settings")}
+            onClick={openWatcherCreate}
             variant="primary">
             <Plus size={16} />
             Create Watcher
@@ -265,12 +282,12 @@ export function Dashboard() {
               {watchers.map((watcher) => (
                 <button
                   className={`w-full rounded-md border px-3 py-3 text-left text-sm transition ${
-                    watcher.id === selectedWatcherId
+                    watcher.id === selectedWatcherId && !creatingWatcher
                       ? "border-signal-blue/50 bg-signal-blue/10"
                       : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
                   }`}
                   key={watcher.id}
-                  onClick={() => setSelectedWatcherId(watcher.id)}
+                  onClick={() => selectWatcher(watcher.id)}
                   type="button">
                   <span className="flex items-center justify-between gap-2">
                     <span className="font-medium text-zinc-100">{watcher.name}</span>
@@ -294,15 +311,27 @@ export function Dashboard() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                  Intelligence Inbox
+                  {creatingWatcher
+                    ? "New Watcher"
+                    : selectedWatcher
+                      ? "Selected Watcher"
+                      : "Intelligence Inbox"}
                 </p>
                 <h1 className="mt-1 text-2xl font-semibold">
-                  High-signal Reddit threads, filtered by intent.
+                  {creatingWatcher
+                    ? "Create a separate watcher."
+                    : selectedWatcher
+                      ? selectedWatcher.name
+                      : "High-signal Reddit threads, filtered by intent."}
                 </h1>
                 <p className="mt-2 text-sm text-zinc-500">
-                  {lastScan
-                    ? `Last scan: ${lastScan.posts_fetched} posts checked, ${lastScan.new_posts} new, ${lastScan.threshold_matches} matched, ${lastScan.notifications_sent} notified.`
-                    : "Last scan: none yet."}
+                  {creatingWatcher
+                    ? "Pick a template, subreddits, and intent without changing an existing watcher."
+                    : selectedWatcher
+                      ? `${selectedWatcher.enabled ? "Periodic scans on" : "Periodic scans paused"} • ${selectedWatcher.scan_interval_minutes}m interval • ${selectedWatcher.subreddits.map((subreddit) => `r/${subreddit}`).join(", ")}`
+                      : lastScan
+                        ? `Last scan: ${lastScan.posts_fetched} posts checked, ${lastScan.new_posts} new, ${lastScan.threshold_matches} matched, ${lastScan.notifications_sent} notified.`
+                        : "Last scan: none yet."}
                 </p>
                 {queueSummary.pending > 0 ? (
                   <p className="mt-1 text-sm text-signal-amber">
@@ -362,11 +391,14 @@ export function Dashboard() {
                 providers={providers}
                 selectedWatcher={selectedWatcher}
                 settings={settings}
+                watcherMode={watcherSettingsMode}
                 watchers={watchers}
                 onWatcherCreated={(watcher) => {
                   setSelectedWatcherId(watcher.id)
-                  changeTab("Inbox")
+                  setWatcherSettingsMode("edit")
+                  changeTab("Settings")
                 }}
+                onWatcherModeChange={setWatcherSettingsMode}
               />
             ) : (
               <ThreadList
@@ -934,6 +966,7 @@ function SettingsView(props: {
   activeProvider: AiProviderRecord
   watchers: WatcherRecord[]
   selectedWatcher?: WatcherRecord
+  watcherMode: WatcherSettingsMode
   logs: Array<{ id: string; timestamp: string; level: string; source: string; message: string; metadata?: unknown }>
   notificationHistory: Array<{
     id: string
@@ -944,15 +977,34 @@ function SettingsView(props: {
     created_at: string
   }>
   onWatcherCreated: (watcher: WatcherRecord) => void
+  onWatcherModeChange: (mode: WatcherSettingsMode) => void
 }) {
+  const editingWatcher = props.watcherMode === "edit" && props.selectedWatcher
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <div className="space-y-4">
         <ProviderSettings provider={props.activeProvider} />
-        <WatcherCreator onCreated={props.onWatcherCreated} />
-        {props.selectedWatcher ? (
-          <WatcherSettings watcher={props.selectedWatcher} />
-        ) : null}
+        {props.watcherMode === "create" ? (
+          <WatcherCreator onCreated={props.onWatcherCreated} />
+        ) : editingWatcher ? (
+          <WatcherSettings watcher={editingWatcher} />
+        ) : (
+          <Panel className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Watcher Settings</h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Select a watcher from the left rail or create a new one.
+                </p>
+              </div>
+              <Button onClick={() => props.onWatcherModeChange("create")}>
+                <Plus size={15} />
+                Create Watcher
+              </Button>
+            </div>
+          </Panel>
+        )}
       </div>
       <div className="space-y-4">
         <OnboardingPanel
@@ -1333,6 +1385,23 @@ function WatcherCreator(props: { onCreated: (watcher: WatcherRecord) => void }) 
 }
 
 function WatcherSettings({ watcher }: { watcher: WatcherRecord }) {
+  const [templateType, setTemplateType] = useState<WatcherTemplateType>(
+    watcher.template_type
+  )
+  const [name, setName] = useState(watcher.name)
+  const [subreddits, setSubreddits] = useState(watcher.subreddits.join(", "))
+  const [intent, setIntent] = useState(watcher.user_prompt)
+  const [status, setStatus] = useState<string>()
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setTemplateType(watcher.template_type)
+    setName(watcher.name)
+    setSubreddits(watcher.subreddits.join(", "))
+    setIntent(watcher.user_prompt)
+    setStatus(undefined)
+  }, [watcher])
+
   async function update(patch: Partial<WatcherRecord>) {
     await db.watchers.update(watcher.id, {
       ...patch,
@@ -1340,10 +1409,90 @@ function WatcherSettings({ watcher }: { watcher: WatcherRecord }) {
     })
   }
 
+  async function saveWatcherDetails() {
+    const normalizedSubreddits = normalizeSubreddits(subreddits.split(/[,\n]/))
+    const now = nowIso()
+
+    setSaving(true)
+    setStatus(undefined)
+    try {
+      await db.transaction("rw", db.watchers, db.subredditSources, async () => {
+        await db.watchers.update(watcher.id, {
+          name: name.trim() || watcher.name,
+          template_type: templateType,
+          user_prompt: intent.trim(),
+          generated_prompt: buildGeneratedPrompt(templateType, intent),
+          subreddits: normalizedSubreddits,
+          updated_at: now
+        })
+        await replaceWatcherSubredditSources(watcher.id, normalizedSubreddits, now)
+      })
+      setStatus("Watcher saved")
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <Panel className="p-5">
-      <h2 className="font-semibold">Watcher Settings</h2>
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Watcher Settings</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Editing {watcher.name}
+          </p>
+        </div>
+        <span
+          className={`rounded-md px-2 py-1 text-xs ${
+            watcher.enabled
+              ? "bg-signal-green/10 text-signal-green"
+              : "bg-white/[0.05] text-zinc-500"
+          }`}>
+          {watcher.enabled ? "Scanning" : "Paused"}
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <Field label="Template">
+          <SelectInput onChange={setTemplateType} value={templateType}>
+            {WATCHER_TEMPLATES.map((item) => (
+              <option key={item.type} value={item.type}>
+                {item.name}
+              </option>
+            ))}
+          </SelectInput>
+        </Field>
+        <Field label="Name">
+          <TextInput onChange={setName} value={name} />
+        </Field>
+        <Field className="md:col-span-2" label="Subreddits">
+          <TextInput
+            onChange={setSubreddits}
+            placeholder="SaaS, startups, Entrepreneur"
+            value={subreddits}
+          />
+        </Field>
+        <Field className="md:col-span-2" label="Custom intent">
+          <TextArea
+            onChange={setIntent}
+            placeholder="Optional: describe the specific signal you care about."
+            rows={3}
+            value={intent}
+          />
+        </Field>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <Button disabled={saving} onClick={saveWatcherDetails} variant="primary">
+          {saving ? <Loader2 className="animate-spin" size={15} /> : <Save size={15} />}
+          Save Watcher
+        </Button>
+        {status ? <p className="text-sm text-zinc-400">{status}</p> : null}
+      </div>
+
+      <div className="mt-6 grid gap-3 md:grid-cols-2">
         <Toggle
           checked={watcher.enabled}
           label="Periodic scanning"
@@ -1615,6 +1764,24 @@ async function requestProviderPermission(baseUrl: string): Promise<void> {
   } catch {
     // Invalid URLs will be surfaced by the provider test/save flow.
   }
+}
+
+async function replaceWatcherSubredditSources(
+  watcherId: string,
+  subreddits: string[],
+  now: string
+): Promise<void> {
+  await db.subredditSources.where("watcher_id").equals(watcherId).delete()
+  await db.subredditSources.bulkPut(
+    subreddits.map((subreddit) => ({
+      id: createId("subreddit"),
+      watcher_id: watcherId,
+      subreddit,
+      enabled: true,
+      created_at: now,
+      updated_at: now
+    }))
+  )
 }
 
 function isProviderConfigured(provider: AiProviderRecord): boolean {
