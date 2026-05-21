@@ -14,6 +14,8 @@ import {
   History,
   Inbox,
   Loader2,
+  Pause,
+  Play,
   Plus,
   Radar,
   Save,
@@ -152,6 +154,7 @@ export function Dashboard() {
   const [watcherSettingsMode, setWatcherSettingsMode] =
     useState<WatcherSettingsMode>("edit")
   const [scanning, setScanning] = useState(false)
+  const [scanMenuOpen, setScanMenuOpen] = useState(false)
 
   useEffect(() => {
     initializeDatabase().catch(console.error)
@@ -225,6 +228,7 @@ export function Dashboard() {
     const watcher = selectedWatcher ?? watchers.find((item) => item.enabled) ?? watchers[0]
     if (!watcher) return
 
+    setScanMenuOpen(false)
     setScanning(true)
     try {
       await scanWatcher(watcher.id)
@@ -254,6 +258,15 @@ export function Dashboard() {
     setSelectedWatcherId(nextWatcher?.id)
     setWatcherSettingsMode(nextWatcher ? "edit" : "create")
     changeTab("Settings")
+  }
+
+  async function toggleSelectedWatcherScanning() {
+    if (!selectedWatcher) return
+    await db.watchers.update(selectedWatcher.id, {
+      enabled: !selectedWatcher.enabled,
+      updated_at: nowIso()
+    })
+    setScanMenuOpen(false)
   }
 
   return (
@@ -352,14 +365,36 @@ export function Dashboard() {
                   </p>
                 ) : null}
               </div>
-              <div className="flex gap-2">
+              <div className="relative flex gap-0">
                 <Button
+                  className="rounded-r-none"
                   disabled={!watchers.length || scanning}
                   onClick={handleScanNow}
                   variant="primary">
                   {scanning ? <Loader2 className="animate-spin" size={16} /> : <Radar size={16} />}
                   Scan Now
                 </Button>
+                <button
+                  className="inline-flex items-center justify-center rounded-r-md border-l border-graphite-950/15 bg-zinc-100 px-2 text-graphite-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!selectedWatcher}
+                  onClick={() => setScanMenuOpen((open) => !open)}
+                  title="Scan options"
+                  type="button">
+                  <ChevronDown size={16} />
+                </button>
+                {scanMenuOpen && selectedWatcher ? (
+                  <div className="absolute right-0 top-11 z-20 w-56 rounded-md border border-white/10 bg-graphite-900 p-1 shadow-panel">
+                    <button
+                      className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-zinc-200 hover:bg-white/[0.06]"
+                      onClick={toggleSelectedWatcherScanning}
+                      type="button">
+                      {selectedWatcher.enabled ? <Pause size={15} /> : <Play size={15} />}
+                      {selectedWatcher.enabled
+                        ? "Pause periodic scans"
+                        : "Resume periodic scans"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </header>
