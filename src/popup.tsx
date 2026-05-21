@@ -16,6 +16,7 @@ import { Button } from "~/components/ui"
 import { initializeDatabase } from "~/db/bootstrap"
 import { db } from "~/db/schema"
 import {
+  clearNotificationSnooze,
   snoozeNotifications,
   snoozeNotificationsToday
 } from "~/services/notifications/notifications"
@@ -138,12 +139,19 @@ function Popup() {
           </Button>
         </div>
         {snoozed ? (
-          <p className="mt-2 text-xs text-zinc-500">
-            Snoozed until{" "}
-            {settings?.notification_snoozed_until
-              ? new Date(settings.notification_snoozed_until).toLocaleTimeString()
-              : ""}
-          </p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-xs text-zinc-500">
+              Snoozed until{" "}
+              {settings?.notification_snoozed_until
+                ? new Date(settings.notification_snoozed_until).toLocaleTimeString()
+                : ""}
+            </p>
+            <Button
+              className="px-2 py-1 text-xs"
+              onClick={clearNotificationSnooze}>
+              Undo
+            </Button>
+          </div>
         ) : null}
 
         <div className="mt-4 space-y-2">

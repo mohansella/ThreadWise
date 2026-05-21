@@ -46,6 +46,7 @@ import { createAiProvider } from "~/services/ai/providers"
 import { scanWatcher } from "~/services/scanner/scanner"
 import { recordThreadFeedback, muteSimilar } from "~/services/learning/feedback"
 import {
+  clearNotificationSnooze,
   snoozeNotifications,
   snoozeNotificationsToday
 } from "~/services/notifications/notifications"
@@ -1128,6 +1129,10 @@ function NotificationSettings(props: {
     created_at: string
   }>
 }) {
+  const snoozed =
+    props.settings.notification_snoozed_until &&
+    new Date(props.settings.notification_snoozed_until).getTime() > Date.now()
+
   return (
     <Panel className="p-5">
       <h2 className="font-semibold">Notifications</h2>
@@ -1146,6 +1151,11 @@ function NotificationSettings(props: {
           <Button onClick={() => snoozeNotifications(1)}>Snooze 1h</Button>
           <Button onClick={() => snoozeNotifications(4)}>Snooze 4h</Button>
           <Button onClick={snoozeNotificationsToday}>Snooze Today</Button>
+          {snoozed ? (
+            <Button onClick={clearNotificationSnooze} variant="primary">
+              Resume
+            </Button>
+          ) : null}
         </div>
         <p className="text-sm text-zinc-500">
           Snoozed until:{" "}

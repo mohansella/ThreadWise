@@ -183,6 +183,14 @@ export async function snoozeNotificationsToday(): Promise<void> {
   })
 }
 
+export async function clearNotificationSnooze(): Promise<void> {
+  await db.settings.update("global", {
+    notification_snoozed_until: undefined,
+    updated_at: nowIso()
+  })
+  await logInfo("notification", "Notifications resumed")
+}
+
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 3)}...` : value
 }
