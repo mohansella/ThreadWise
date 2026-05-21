@@ -93,6 +93,23 @@ const tabs: Array<{ label: DashboardTab; icon: typeof Inbox }> = [
   { label: "Settings", icon: Settings }
 ]
 
+const dashboardTabRoutes: Record<DashboardTab, string> = {
+  Inbox: "inbox",
+  "Hidden Gems": "hidden-gems",
+  Urgent: "urgent",
+  Saved: "saved",
+  History: "history",
+  "Scan Activity": "scan-activity",
+  Settings: "settings"
+}
+
+const dashboardTabByRoute = new Map(
+  Object.entries(dashboardTabRoutes).map(([tab, route]) => [
+    route,
+    tab as DashboardTab
+  ])
+)
+
 const negativeReasons: Array<{ value: NegativeFeedbackReason; label: string }> = [
   { value: "too_beginner", label: "Too beginner" },
   { value: "too_promotional", label: "Too promotional" },
@@ -106,12 +123,21 @@ const negativeReasons: Array<{ value: NegativeFeedbackReason; label: string }> =
 ]
 
 export function Dashboard() {
-  const [activeTab, setActiveTab] = useState<DashboardTab>("Inbox")
+  const [activeTab, setActiveTab] = useState<DashboardTab>(readDashboardTabRoute)
   const [selectedWatcherId, setSelectedWatcherId] = useState<string>()
   const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
     initializeDatabase().catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    function syncTabFromRoute() {
+      setActiveTab(readDashboardTabRoute())
+    }
+
+    window.addEventListener("hashchange", syncTabFromRoute)
+    return () => window.removeEventListener("hashchange", syncTabFromRoute)
   }, [])
 
   const settings = useLiveQuery(() => db.settings.get(DEFAULT_SETTINGS_ID), [])
@@ -172,10 +198,15 @@ export function Dashboard() {
     setScanning(true)
     try {
       await scanWatcher(watcher.id)
-      setActiveTab("Scan Activity")
+      changeTab("Scan Activity")
     } finally {
       setScanning(false)
     }
+  }
+
+  function changeTab(tab: DashboardTab) {
+    setActiveTab(tab)
+    writeDashboardTabRoute(tab)
   }
 
   return (
@@ -194,7 +225,7 @@ export function Dashboard() {
 
           <Button
             className="mt-6 w-full"
-            onClick={() => setActiveTab("Settings")}
+            onClick={() => changeTab("Settings")}
             variant="primary">
             <Plus size={16} />
             Create Watcher
@@ -285,7 +316,7 @@ export function Dashboard() {
                       : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
                   }`}
                   key={tab.label}
-                  onClick={() => setActiveTab(tab.label)}
+                  onClick={() => changeTab(tab.label)}
                   type="button">
                   <Icon size={15} />
                   {tab.label}
@@ -313,7 +344,7 @@ export function Dashboard() {
                 watchers={watchers}
                 onWatcherCreated={(watcher) => {
                   setSelectedWatcherId(watcher.id)
-                  setActiveTab("Inbox")
+                  changeTab("Inbox")
                 }}
               />
             ) : (
@@ -1295,6 +1326,17 @@ function isProviderConfigured(provider: AiProviderRecord): boolean {
 
 function isLocalProviderUrl(baseUrl: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(baseUrl)
+}
+
+function readDashboardTabRoute(): DashboardTab {
+  const route = window.location.hash.replace(/^#\/?/, "")
+  return dashboardTabByRoute.get(route) ?? "Inbox"
+}
+
+function writeDashboardTabRoute(tab: DashboardTab): void {
+  const nextHash = `#${dashboardTabRoutes[tab]}`
+  if (window.location.hash === nextHash) return
+  window.history.replaceState(null, "", nextHash)
 }
 
 function summarizeQueue(queueItems: AiQueueRecord[]) {

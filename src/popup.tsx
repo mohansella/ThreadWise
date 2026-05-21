@@ -20,6 +20,7 @@ import {
   snoozeNotifications,
   snoozeNotificationsToday
 } from "~/services/notifications/notifications"
+import type { NotificationHistoryRecord } from "~/types/domain"
 import { formatRelativeTime } from "~/utils/time"
 
 function Popup() {
@@ -71,6 +72,17 @@ function Popup() {
     }
   }
 
+  async function openAlert(alert: NotificationHistoryRecord) {
+    await db.notificationHistory.update(alert.id, {
+      clicked_at: new Date().toISOString()
+    })
+
+    const post = await db.posts.get(alert.post_id)
+    chrome.tabs.create({
+      url: post?.permalink ?? chrome.runtime.getURL("options.html#inbox")
+    })
+  }
+
   return (
     <main className="w-[390px] bg-graphite-950 p-4 text-zinc-100">
       <section className="rounded-lg border border-white/10 bg-graphite-900 p-4 shadow-panel">
@@ -87,13 +99,23 @@ function Popup() {
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <PopupStat icon={<Bell size={16} />} label="Unread" value={unread} />
+          <PopupStat
+            icon={<Bell size={16} />}
+            label="Unread"
+            onClick={() => openDashboard("inbox")}
+            value={unread}
+          />
           <PopupStat
             icon={<Gauge size={16} />}
             label="Scanner"
             value={scanning ? "Scanning" : latestScan?.status ?? "Idle"}
           />
-          <PopupStat icon={<Radar size={16} />} label="Queued" value={pendingQueue} />
+          <PopupStat
+            icon={<Radar size={16} />}
+            label="Queued"
+            onClick={() => openDashboard("scan-activity")}
+            value={pendingQueue}
+          />
         </div>
 
         <div className="mt-4 rounded-md bg-white/[0.035] p-3">
@@ -120,7 +142,7 @@ function Popup() {
             {scanning ? <Loader2 className="animate-spin" size={16} /> : <Radar size={16} />}
             Scan Now
           </Button>
-          <Button onClick={() => chrome.runtime.openOptionsPage()} title="Open Dashboard">
+          <Button onClick={() => openDashboard("inbox")} title="Open Dashboard">
             <LayoutDashboard size={16} />
           </Button>
         </div>
@@ -164,7 +186,7 @@ function Popup() {
               <button
                 className="w-full rounded-md bg-white/[0.035] p-3 text-left hover:bg-white/[0.06]"
                 key={alert.id}
-                onClick={() => chrome.runtime.openOptionsPage()}
+                onClick={() => openAlert(alert)}
                 type="button">
                 <p className="line-clamp-2 text-sm font-medium">{alert.title}</p>
                 <p className="mt-1 text-xs text-zinc-500">
@@ -182,15 +204,33 @@ function Popup() {
 function PopupStat(props: {
   icon: React.ReactNode
   label: string
+  onClick?: () => void
   value: string | number
 }) {
-  return (
-    <div className="rounded-md bg-white/[0.04] p-3">
+  const content = (
+    <>
       <div className="text-signal-blue">{props.icon}</div>
       <p className="mt-2 truncate text-lg font-semibold">{props.value}</p>
       <p className="text-xs text-zinc-500">{props.label}</p>
-    </div>
+    </>
   )
+
+  if (props.onClick) {
+    return (
+      <button
+        className="rounded-md bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]"
+        onClick={props.onClick}
+        type="button">
+        {content}
+      </button>
+    )
+  }
+
+  return <div className="rounded-md bg-white/[0.04] p-3">{content}</div>
+}
+
+function openDashboard(route: "inbox" | "scan-activity" | "settings") {
+  chrome.tabs.create({ url: chrome.runtime.getURL(`options.html#${route}`) })
 }
 
 function sendRuntimeMessage(message: Record<string, unknown>): Promise<unknown> {
