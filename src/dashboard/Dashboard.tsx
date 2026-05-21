@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock3,
   ExternalLink,
+  Eye,
   EyeOff,
   History,
   Inbox,
@@ -46,7 +47,12 @@ import { db } from "~/db/schema"
 import { PROVIDER_PRESETS, WATCHER_TEMPLATES } from "~/db/templates"
 import { createAiProvider } from "~/services/ai/providers"
 import { scanWatcher } from "~/services/scanner/scanner"
-import { recordThreadFeedback, muteSimilar } from "~/services/learning/feedback"
+import {
+  buildMutedPatternsForThread,
+  muteSimilar,
+  recordThreadFeedback,
+  unmuteSimilar
+} from "~/services/learning/feedback"
 import {
   clearNotificationSnooze,
   dismissNotification,
@@ -61,6 +67,7 @@ import type {
   AiQueueRecord,
   AiScoreRecord,
   FeedbackRecord,
+  MutedPatternRecord,
   NegativeFeedbackReason,
   NotificationHistoryRecord,
   ProviderType,
@@ -88,6 +95,7 @@ interface ThreadItem {
   post: RedditPostRecord
   watcher: WatcherRecord
   feedback: FeedbackRecord | undefined
+  mutedPatterns: MutedPatternRecord[]
 }
 
 const tabs: Array<{ label: DashboardTab; icon: typeof Inbox }> = [
@@ -162,6 +170,7 @@ export function Dashboard() {
     useLiveQuery(() => db.aiScores.orderBy("created_at").reverse().toArray(), []) ??
     []
   const feedback = useLiveQuery(() => db.feedback.toArray(), []) ?? []
+  const mutedPatterns = useLiveQuery(() => db.mutedPatterns.toArray(), []) ?? []
   const scanRuns =
     useLiveQuery(() => db.scanRuns.orderBy("started_at").reverse().toArray(), []) ??
     []
@@ -192,6 +201,7 @@ export function Dashboard() {
     posts,
     watchers,
     feedback,
+    mutedPatterns,
     selectedWatcherId,
     activeTab
   })
@@ -375,6 +385,7 @@ function useThreadItems(input: {
   posts: RedditPostRecord[]
   watchers: WatcherRecord[]
   feedback: FeedbackRecord[]
+  mutedPatterns: MutedPatternRecord[]
   selectedWatcherId?: string
   activeTab: DashboardTab
 }): ThreadItem[] {
@@ -400,11 +411,24 @@ function useThreadItems(input: {
         const post = postById.get(score.post_id)
         const watcher = watcherById.get(score.watcher_id)
         if (!post || !watcher) return undefined
+        const mutePatterns = buildMutedPatternsForThread(score, post)
+        const mutedPatterns = input.mutedPatterns.filter(
+          (pattern) =>
+            pattern.watcher_id === watcher.id &&
+            pattern.enabled &&
+            mutePatterns.some(
+              (value) =>
+                value.trim().toLowerCase() ===
+                pattern.pattern.trim().toLowerCase()
+            )
+        )
+
         return {
           score,
           post,
           watcher,
-          feedback: feedbackByPost.get(`${score.watcher_id}:${score.post_id}`)
+          feedback: feedbackByPost.get(`${score.watcher_id}:${score.post_id}`),
+          mutedPatterns
         }
       })
       .filter((item): item is ThreadItem => Boolean(item))
@@ -604,11 +628,28 @@ function ThreadCard({ item }: { item: ThreadItem }) {
   const [reason, setReason] =
     useState<NegativeFeedbackReason>("not_actionable")
   const [busy, setBusy] = useState<string>()
+  const [notice, setNotice] = useState<{
+    tone: "success" | "error"
+    message: string
+  }>()
+  const sentiment = item.feedback?.sentiment
+  const muted = item.mutedPatterns.length > 0
 
-  async function withBusy(label: string, action: () => Promise<void>) {
+  async function withBusy(
+    label: string,
+    successMessage: string,
+    action: () => Promise<void>
+  ) {
     setBusy(label)
+    setNotice(undefined)
     try {
       await action()
+      setNotice({ tone: "success", message: successMessage })
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error)
+      })
     } finally {
       setBusy(undefined)
     }
@@ -657,18 +698,26 @@ function ThreadCard({ item }: { item: ThreadItem }) {
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <Button
-          disabled={busy === "relevant"}
+          disabled={Boolean(busy)}
           onClick={() =>
-            withBusy("relevant", () =>
-              recordThreadFeedback({
-                watcherId: item.watcher.id,
-                postId: item.post.id,
-                sentiment: "relevant"
-              })
+            withBusy(
+              "relevant",
+              "Marked as relevant",
+              () =>
+                recordThreadFeedback({
+                  watcherId: item.watcher.id,
+                  postId: item.post.id,
+                  sentiment: "relevant"
+                })
             )
-          }>
-          <ThumbsUp size={15} />
-          Relevant
+          }
+          variant={sentiment === "relevant" ? "primary" : "secondary"}>
+          {busy === "relevant" ? (
+            <Loader2 className="animate-spin" size={15} />
+          ) : (
+            <ThumbsUp size={15} />
+          )}
+          {sentiment === "relevant" ? "Relevant" : "Relevant"}
         </Button>
         <div className="flex items-center gap-2">
           <select
@@ -684,49 +733,92 @@ function ThreadCard({ item }: { item: ThreadItem }) {
             ))}
           </select>
           <Button
-            disabled={busy === "not_relevant"}
+            disabled={Boolean(busy)}
             onClick={() =>
-              withBusy("not_relevant", () =>
-                recordThreadFeedback({
-                  watcherId: item.watcher.id,
-                  postId: item.post.id,
-                  sentiment: "not_relevant",
-                  reason
-                })
+              withBusy(
+                "not_relevant",
+                "Marked as not relevant",
+                () =>
+                  recordThreadFeedback({
+                    watcherId: item.watcher.id,
+                    postId: item.post.id,
+                    sentiment: "not_relevant",
+                    reason
+                  })
               )
-            }>
-            <ThumbsDown size={15} />
+            }
+            variant={sentiment === "not_relevant" ? "danger" : "secondary"}>
+            {busy === "not_relevant" ? (
+              <Loader2 className="animate-spin" size={15} />
+            ) : (
+              <ThumbsDown size={15} />
+            )}
             Not Relevant
           </Button>
         </div>
         <Button
-          disabled={busy === "saved"}
+          disabled={Boolean(busy)}
           onClick={() =>
-            withBusy("saved", () =>
-              recordThreadFeedback({
-                watcherId: item.watcher.id,
-                postId: item.post.id,
-                sentiment: "saved"
-              })
+            withBusy(
+              "saved",
+              "Saved",
+              () =>
+                recordThreadFeedback({
+                  watcherId: item.watcher.id,
+                  postId: item.post.id,
+                  sentiment: "saved"
+                })
             )
-          }>
-          <Save size={15} />
-          Save
+          }
+          variant={sentiment === "saved" ? "primary" : "secondary"}>
+          {busy === "saved" ? (
+            <Loader2 className="animate-spin" size={15} />
+          ) : (
+            <Save size={15} />
+          )}
+          {sentiment === "saved" ? "Saved" : "Save"}
         </Button>
         <Button onClick={() => chrome.tabs.create({ url: item.post.permalink })}>
           <ExternalLink size={15} />
           Open Reddit
         </Button>
         <Button
+          disabled={Boolean(busy)}
           onClick={() =>
-            withBusy("mute", () =>
-              muteSimilar({ watcherId: item.watcher.id, postId: item.post.id })
+            withBusy(
+              muted ? "unmute" : "mute",
+              muted ? "Similar threads unmuted" : "Similar threads muted",
+              () =>
+                muted
+                  ? unmuteSimilar({
+                      watcherId: item.watcher.id,
+                      postId: item.post.id
+                    })
+                  : muteSimilar({
+                      watcherId: item.watcher.id,
+                      postId: item.post.id
+                    })
             )
-          }>
-          <EyeOff size={15} />
-          Mute Similar
+          }
+          variant={muted ? "primary" : "secondary"}>
+          {busy === "mute" || busy === "unmute" ? (
+            <Loader2 className="animate-spin" size={15} />
+          ) : muted ? (
+            <Eye size={15} />
+          ) : (
+            <EyeOff size={15} />
+          )}
+          {muted ? "Unmute Similar" : "Mute Similar"}
         </Button>
       </div>
+      {notice ? (
+        <p
+          className={`mt-3 text-sm ${
+            notice.tone === "success" ? "text-signal-green" : "text-signal-red"
+          }`}>
+          {notice.message}
+        </p>
+      ) : null}
     </Panel>
   )
 }
