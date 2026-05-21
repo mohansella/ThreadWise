@@ -351,6 +351,39 @@ Do not expose full API keys in the UI after saving. Show only masked value.
 
 ## AI provider abstraction
 
+Use Vercel AI SDK for provider abstraction.
+
+Support:
+
+- OpenAI
+- Google Gemini
+- Anthropic
+- OpenRouter
+- Groq
+
+Architecture requirements:
+
+- Generic provider interface
+- Provider-specific adapters
+- User can select provider in settings
+- User can configure:
+  - API key
+  - model name
+  - endpoint URL if supported
+
+Default examples:
+
+- Gemini:
+  model: gemini-2.5-flash
+- OpenAI:
+  model: gpt-4.1-mini
+- Anthropic:
+  model: claude-3-5-sonnet
+- Groq:
+  model: llama-3.3-70b-versatile
+
+Store provider config locally only.
+
 Create a provider interface:
 
 ```ts
@@ -920,4 +953,3 @@ Build the complete MVP now.
 Make reasonable engineering and product decisions without asking questions.
 
 Prefer simple reliable implementation over overengineering.
-

@@ -171,26 +171,50 @@ export const WATCHER_TEMPLATES: WatcherTemplate[] = [
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
-    provider_type: "openai_compatible",
-    display_name: "OpenAI-compatible",
+    provider_type: "openai",
+    display_name: "OpenAI",
     base_url: "https://api.openai.com/v1",
-    model: "gpt-4o-mini",
+    model: "gpt-4.1-mini",
+    requests_per_minute: 6,
+    max_batch_size: 5
+  },
+  {
+    provider_type: "gemini",
+    display_name: "Google Gemini",
+    base_url: "https://generativelanguage.googleapis.com/v1beta",
+    model: "gemini-2.5-flash",
+    requests_per_minute: 6,
+    max_batch_size: 5
+  },
+  {
+    provider_type: "anthropic",
+    display_name: "Anthropic",
+    base_url: "https://api.anthropic.com/v1",
+    model: "claude-3-5-sonnet",
     requests_per_minute: 6,
     max_batch_size: 5
   },
   {
     provider_type: "openrouter",
-    display_name: "OpenRouter-compatible",
+    display_name: "OpenRouter",
     base_url: "https://openrouter.ai/api/v1",
-    model: "openai/gpt-4o-mini",
+    model: "openai/gpt-4.1-mini",
     requests_per_minute: 6,
     max_batch_size: 5
   },
   {
     provider_type: "groq",
-    display_name: "Groq-compatible",
+    display_name: "Groq",
     base_url: "https://api.groq.com/openai/v1",
-    model: "llama-3.1-8b-instant",
+    model: "llama-3.3-70b-versatile",
+    requests_per_minute: 6,
+    max_batch_size: 5
+  },
+  {
+    provider_type: "openai_compatible",
+    display_name: "OpenAI-compatible",
+    base_url: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
     requests_per_minute: 6,
     max_batch_size: 5
   },
