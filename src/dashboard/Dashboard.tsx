@@ -115,7 +115,13 @@ export function Dashboard() {
   const settings = useLiveQuery(() => db.settings.get(DEFAULT_SETTINGS_ID), [])
   const providers = useLiveQuery(() => db.aiProviders.toArray(), []) ?? []
   const watchers =
-    useLiveQuery(() => db.watchers.orderBy("created_at").toArray(), []) ?? []
+    useLiveQuery(
+      async () =>
+        (await db.watchers.toArray()).sort((a, b) =>
+          a.created_at.localeCompare(b.created_at)
+        ),
+      []
+    ) ?? []
   const posts = useLiveQuery(() => db.posts.toArray(), []) ?? []
   const scores =
     useLiveQuery(() => db.aiScores.orderBy("created_at").reverse().toArray(), []) ??
