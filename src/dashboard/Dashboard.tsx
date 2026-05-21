@@ -4,6 +4,7 @@ import {
   Bell,
   Bookmark,
   Bug,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Clock3,
@@ -19,6 +20,7 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  X,
   Zap
 } from "lucide-react"
 
@@ -47,6 +49,10 @@ import { scanWatcher } from "~/services/scanner/scanner"
 import { recordThreadFeedback, muteSimilar } from "~/services/learning/feedback"
 import {
   clearNotificationSnooze,
+  dismissNotification,
+  dismissReadNotifications,
+  markNotificationRead,
+  markNotificationsRead,
   snoozeNotifications,
   snoozeNotificationsToday
 } from "~/services/notifications/notifications"
@@ -56,6 +62,7 @@ import type {
   AiScoreRecord,
   FeedbackRecord,
   NegativeFeedbackReason,
+  NotificationHistoryRecord,
   ProviderType,
   RedditPostRecord,
   ScanRunRecord,
@@ -351,6 +358,8 @@ export function Dashboard() {
               <ThreadList
                 activeTab={activeTab}
                 items={threadItems}
+                notificationHistory={notificationHistory}
+                posts={posts}
                 selectedWatcher={selectedWatcher}
               />
             )}
@@ -372,9 +381,15 @@ function useThreadItems(input: {
   return useMemo(() => {
     const postById = new Map(input.posts.map((post) => [post.id, post]))
     const watcherById = new Map(input.watchers.map((watcher) => [watcher.id, watcher]))
-    const feedbackByPost = new Map(
-      input.feedback.map((item) => [`${item.watcher_id}:${item.post_id}`, item])
-    )
+    const feedbackByPost = new Map<string, FeedbackRecord>()
+
+    for (const item of input.feedback) {
+      const key = `${item.watcher_id}:${item.post_id}`
+      const existing = feedbackByPost.get(key)
+      if (!existing || item.created_at.localeCompare(existing.created_at) > 0) {
+        feedbackByPost.set(key, item)
+      }
+    }
 
     return input.scores
       .filter(
@@ -415,6 +430,8 @@ function filterThreadItem(item: ThreadItem, activeTab: DashboardTab): boolean {
 function ThreadList(props: {
   activeTab: DashboardTab
   items: ThreadItem[]
+  notificationHistory: NotificationHistoryRecord[]
+  posts: RedditPostRecord[]
   selectedWatcher?: WatcherRecord
 }) {
   if (!props.selectedWatcher) {
@@ -426,21 +443,160 @@ function ThreadList(props: {
     )
   }
 
+  const alertInbox =
+    props.activeTab === "Inbox" ? (
+      <NotificationInbox
+        history={props.notificationHistory}
+        posts={props.posts}
+        watcher={props.selectedWatcher}
+      />
+    ) : null
+
   if (props.items.length === 0) {
     return (
-      <EmptyState
-        body="Run a scan or lower the thresholds if you want broader coverage."
-        title={`No ${props.activeTab.toLowerCase()} threads yet`}
-      />
+      <div className="space-y-4">
+        {alertInbox}
+        <EmptyState
+          body="Run a scan or lower the thresholds if you want broader coverage."
+          title={`No ${props.activeTab.toLowerCase()} threads yet`}
+        />
+      </div>
     )
   }
 
   return (
     <div className="space-y-4">
+      {alertInbox}
       {props.items.map((item) => (
         <ThreadCard item={item} key={item.score.id} />
       ))}
     </div>
+  )
+}
+
+function NotificationInbox(props: {
+  history: NotificationHistoryRecord[]
+  posts: RedditPostRecord[]
+  watcher: WatcherRecord
+}) {
+  const postById = useMemo(
+    () => new Map(props.posts.map((post) => [post.id, post])),
+    [props.posts]
+  )
+  const alerts = useMemo(() => {
+    const active = props.history
+      .filter((item) => item.watcher_id === props.watcher.id)
+      .filter((item) => !item.dismissed_at)
+
+    return [
+      ...active.filter((item) => !item.clicked_at),
+      ...active.filter((item) => item.clicked_at)
+    ].slice(0, 10)
+  }, [props.history, props.watcher.id])
+
+  const unreadAlerts = alerts.filter((item) => !item.clicked_at)
+  const readAlerts = alerts.filter((item) => item.clicked_at)
+
+  async function openAlert(alert: NotificationHistoryRecord) {
+    await markNotificationRead(alert.id)
+    const post = postById.get(alert.post_id)
+    chrome.tabs.create({
+      url: post?.permalink ?? chrome.runtime.getURL("options.html#inbox")
+    })
+  }
+
+  if (alerts.length === 0) return null
+
+  return (
+    <Panel className="p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Alert Inbox</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            {unreadAlerts.length} unread, {readAlerts.length} read
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {unreadAlerts.length > 0 ? (
+            <Button
+              onClick={() =>
+                markNotificationsRead(unreadAlerts.map((alert) => alert.id))
+              }>
+              <CheckCircle2 size={15} />
+              Mark All Read
+            </Button>
+          ) : null}
+          {readAlerts.length > 0 ? (
+            <Button
+              onClick={() => dismissReadNotifications(props.watcher.id)}
+              variant="danger">
+              <X size={15} />
+              Dismiss Read
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {alerts.map((alert) => {
+          const unread = !alert.clicked_at
+
+          return (
+            <div
+              className={`rounded-md border p-3 ${
+                unread
+                  ? "border-signal-blue/40 bg-signal-blue/10"
+                  : "border-white/10 bg-white/[0.035]"
+              }`}
+              key={alert.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-md px-2 py-1 text-xs ${
+                        unread
+                          ? "bg-signal-blue/15 text-signal-blue"
+                          : "bg-white/[0.05] text-zinc-500"
+                      }`}>
+                      {unread ? "Unread" : "Read"}
+                    </span>
+                    <span className="text-xs text-zinc-500">
+                      r/{alert.subreddit} • {alert.relevance} relevance •{" "}
+                      {formatRelativeTime(alert.created_at)}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm font-medium text-zinc-100">
+                    {alert.title}
+                  </p>
+                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-400">
+                    {alert.reason}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => openAlert(alert)}>
+                    <ExternalLink size={15} />
+                    Open
+                  </Button>
+                  {unread ? (
+                    <Button onClick={() => markNotificationRead(alert.id)}>
+                      <CheckCircle2 size={15} />
+                      Mark Read
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => dismissNotification(alert.id)}
+                      variant="danger">
+                      <X size={15} />
+                      Dismiss
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Panel>
   )
 }
 

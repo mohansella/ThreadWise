@@ -17,6 +17,7 @@ import { initializeDatabase } from "~/db/bootstrap"
 import { db } from "~/db/schema"
 import {
   clearNotificationSnooze,
+  markNotificationRead,
   snoozeNotifications,
   snoozeNotificationsToday
 } from "~/services/notifications/notifications"
@@ -73,10 +74,7 @@ function Popup() {
   }
 
   async function openAlert(alert: NotificationHistoryRecord) {
-    await db.notificationHistory.update(alert.id, {
-      clicked_at: new Date().toISOString()
-    })
-
+    await markNotificationRead(alert.id)
     const post = await db.posts.get(alert.post_id)
     chrome.tabs.create({
       url: post?.permalink ?? chrome.runtime.getURL("options.html#inbox")

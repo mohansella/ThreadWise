@@ -64,13 +64,52 @@ export async function handleNotificationClicked(
   const history = await db.notificationHistory.get(historyId)
   if (!history) return
 
-  await db.notificationHistory.update(history.id, {
-    clicked_at: nowIso()
-  })
+  await markNotificationRead(history.id)
 
   const post = await db.posts.get(history.post_id)
   const url = post?.permalink ?? chrome.runtime.getURL("options.html")
   chrome.tabs.create({ url })
+}
+
+export async function markNotificationRead(historyId: string): Promise<void> {
+  await db.notificationHistory.update(historyId, {
+    clicked_at: nowIso()
+  })
+}
+
+export async function markNotificationsRead(historyIds: string[]): Promise<void> {
+  const now = nowIso()
+  const uniqueIds = Array.from(new Set(historyIds))
+  await Promise.all(
+    uniqueIds.map((id) =>
+      db.notificationHistory.update(id, {
+        clicked_at: now
+      })
+    )
+  )
+}
+
+export async function dismissNotification(historyId: string): Promise<void> {
+  await db.notificationHistory.update(historyId, {
+    dismissed_at: nowIso()
+  })
+}
+
+export async function dismissReadNotifications(watcherId?: string): Promise<void> {
+  const now = nowIso()
+  const history = await db.notificationHistory.toArray()
+  const readIds = history
+    .filter((item) => !watcherId || item.watcher_id === watcherId)
+    .filter((item) => item.clicked_at && !item.dismissed_at)
+    .map((item) => item.id)
+
+  await Promise.all(
+    readIds.map((id) =>
+      db.notificationHistory.update(id, {
+        dismissed_at: now
+      })
+    )
+  )
 }
 
 async function shouldNotify(
