@@ -21,6 +21,7 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   X,
   Zap
 } from "lucide-react"
@@ -67,6 +68,7 @@ import {
   MIN_SCAN_INTERVAL_MINUTES,
   normalizeScanIntervalMinutes
 } from "~/services/scanner/schedule"
+import { deleteWatcher } from "~/services/watchers/watchers"
 import type {
   AiProviderRecord,
   AiQueueRecord,
@@ -247,6 +249,13 @@ export function Dashboard() {
     setWatcherSettingsMode("edit")
   }
 
+  function handleWatcherDeleted(watcherId: string) {
+    const nextWatcher = watchers.find((watcher) => watcher.id !== watcherId)
+    setSelectedWatcherId(nextWatcher?.id)
+    setWatcherSettingsMode(nextWatcher ? "edit" : "create")
+    changeTab("Settings")
+  }
+
   return (
     <main className="min-h-screen bg-graphite-950 text-zinc-100">
       <div className="flex min-h-screen">
@@ -398,6 +407,7 @@ export function Dashboard() {
                   setWatcherSettingsMode("edit")
                   changeTab("Settings")
                 }}
+                onWatcherDeleted={handleWatcherDeleted}
                 onWatcherModeChange={setWatcherSettingsMode}
               />
             ) : (
@@ -977,6 +987,7 @@ function SettingsView(props: {
     created_at: string
   }>
   onWatcherCreated: (watcher: WatcherRecord) => void
+  onWatcherDeleted: (watcherId: string) => void
   onWatcherModeChange: (mode: WatcherSettingsMode) => void
 }) {
   const editingWatcher = props.watcherMode === "edit" && props.selectedWatcher
@@ -988,7 +999,10 @@ function SettingsView(props: {
         {props.watcherMode === "create" ? (
           <WatcherCreator onCreated={props.onWatcherCreated} />
         ) : editingWatcher ? (
-          <WatcherSettings watcher={editingWatcher} />
+          <WatcherSettings
+            onDeleted={props.onWatcherDeleted}
+            watcher={editingWatcher}
+          />
         ) : (
           <Panel className="p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1384,7 +1398,13 @@ function WatcherCreator(props: { onCreated: (watcher: WatcherRecord) => void }) 
   )
 }
 
-function WatcherSettings({ watcher }: { watcher: WatcherRecord }) {
+function WatcherSettings({
+  onDeleted,
+  watcher
+}: {
+  onDeleted: (watcherId: string) => void
+  watcher: WatcherRecord
+}) {
   const [templateType, setTemplateType] = useState<WatcherTemplateType>(
     watcher.template_type
   )
@@ -1393,6 +1413,7 @@ function WatcherSettings({ watcher }: { watcher: WatcherRecord }) {
   const [intent, setIntent] = useState(watcher.user_prompt)
   const [status, setStatus] = useState<string>()
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     setTemplateType(watcher.template_type)
@@ -1432,6 +1453,23 @@ function WatcherSettings({ watcher }: { watcher: WatcherRecord }) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function deleteCurrentWatcher() {
+    const confirmed = window.confirm(
+      `Delete "${watcher.name}" and its scores, feedback, notifications, scan runs, queue rows, muted patterns, and watcher logs? This cannot be undone.`
+    )
+    if (!confirmed) return
+
+    setDeleting(true)
+    setStatus(undefined)
+    try {
+      await deleteWatcher(watcher.id)
+      onDeleted(watcher.id)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error))
+      setDeleting(false)
     }
   }
 
@@ -1488,6 +1526,17 @@ function WatcherSettings({ watcher }: { watcher: WatcherRecord }) {
         <Button disabled={saving} onClick={saveWatcherDetails} variant="primary">
           {saving ? <Loader2 className="animate-spin" size={15} /> : <Save size={15} />}
           Save Watcher
+        </Button>
+        <Button
+          disabled={deleting}
+          onClick={deleteCurrentWatcher}
+          variant="danger">
+          {deleting ? (
+            <Loader2 className="animate-spin" size={15} />
+          ) : (
+            <Trash2 size={15} />
+          )}
+          Delete Watcher
         </Button>
         {status ? <p className="text-sm text-zinc-400">{status}</p> : null}
       </div>
