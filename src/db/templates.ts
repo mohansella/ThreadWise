@@ -219,14 +219,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     max_batch_size: 5
   },
   {
-    provider_type: "gemini",
-    display_name: "Gemini OpenAI-compatible",
-    base_url: "",
-    model: "gemini-1.5-flash",
-    requests_per_minute: 6,
-    max_batch_size: 5
-  },
-  {
     provider_type: "ollama",
     display_name: "Ollama/local OpenAI-compatible",
     base_url: "http://localhost:11434/v1",
