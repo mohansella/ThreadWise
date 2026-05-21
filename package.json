@@ -45,6 +45,7 @@
   },
   "homepage": "https://github.com/mohansella/ThreadWise#readme",
   "dependencies": {
+    "clsx": "^2.1.1",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "lucide-react": "^1.16.0",

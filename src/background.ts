@@ -1,7 +1,7 @@
 import { initializeDatabase } from "~/db/bootstrap"
-import { processAiQueue } from "~/services/ai/queue/queue"
+import { getAiQueueSummary, processAiQueue } from "~/services/ai/queue/queue"
 import { handleNotificationClicked } from "~/services/notifications/notifications"
-import { scanEnabledWatchers } from "~/services/scanner/scanner"
+import { scanEnabledWatchers, scanWatcher } from "~/services/scanner/scanner"
 
 initializeDatabase().catch((error) => {
   console.error("[ThreadWise] database initialization failed", error)
@@ -50,3 +50,39 @@ chrome.notifications.onClicked.addListener((notificationId) => {
     console.error("[ThreadWise] notification click failed", error)
   })
 })
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!message || typeof message !== "object" || !("type" in message)) {
+    return false
+  }
+
+  handleMessage(message as { type: string; watcherId?: string })
+    .then((response) => sendResponse({ ok: true, ...response }))
+    .catch((error) => {
+      console.error("[ThreadWise] message failed", error)
+      sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    })
+
+  return true
+})
+
+async function handleMessage(message: { type: string; watcherId?: string }) {
+  if (message.type === "THREADWISE_SCAN_NOW") {
+    if (message.watcherId) {
+      const run = await scanWatcher(message.watcherId)
+      return { run }
+    }
+
+    const runs = await scanEnabledWatchers()
+    return { runs }
+  }
+
+  if (message.type === "THREADWISE_QUEUE_STATUS") {
+    return { queue: await getAiQueueSummary() }
+  }
+
+  throw new Error(`Unknown ThreadWise message: ${message.type}`)
+}
