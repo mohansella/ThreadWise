@@ -17,20 +17,37 @@ import {
 } from "~/services/reddit/client"
 
 import { scoreLocalCandidate } from "./local-score"
+import { normalizeScanIntervalMinutes } from "./schedule"
 
 const LISTINGS: RedditListing[] = ["hot", "new", "rising"]
 const LOCAL_SCORE_THRESHOLD = 35
 const MAX_CANDIDATES_PER_SCAN = 20
 
-export async function scanEnabledWatchers(): Promise<ScanRunRecord[]> {
+export async function scanEnabledWatchers(options: {
+  force?: boolean
+} = {}): Promise<ScanRunRecord[]> {
   const watchers = await db.watchers.filter((watcher) => watcher.enabled).toArray()
   const runs: ScanRunRecord[] = []
 
   for (const watcher of watchers) {
+    if (!options.force && !(await isWatcherDueForScan(watcher))) continue
     runs.push(await scanWatcher(watcher.id))
   }
 
   return runs
+}
+
+async function isWatcherDueForScan(watcher: WatcherRecord): Promise<boolean> {
+  const intervalMs = normalizeScanIntervalMinutes(watcher.scan_interval_minutes) * 60_000
+  const lastRun = (
+    await db.scanRuns.where("watcher_id").equals(watcher.id).toArray()
+  ).sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
+
+  if (!lastRun) return true
+  if (lastRun.status === "running") return false
+
+  const lastStartedAt = new Date(lastRun.started_at).getTime()
+  return Date.now() - lastStartedAt >= intervalMs
 }
 
 export async function scanWatcher(watcherId: string): Promise<ScanRunRecord> {

@@ -68,14 +68,22 @@ export function Field(props: {
 export function TextInput(props: {
   value: string
   onChange: (value: string) => void
+  onBlur?: () => void
+  max?: number
+  min?: number
   placeholder?: string
+  step?: number
   type?: string
 }) {
   return (
     <input
       className="w-full rounded-md border border-white/10 bg-graphite-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
+      max={props.max}
+      min={props.min}
+      onBlur={props.onBlur}
       onChange={(event) => props.onChange(event.currentTarget.value)}
       placeholder={props.placeholder}
+      step={props.step}
       type={props.type ?? "text"}
       value={props.value}
     />

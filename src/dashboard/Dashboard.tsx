@@ -62,6 +62,10 @@ import {
   snoozeNotifications,
   snoozeNotificationsToday
 } from "~/services/notifications/notifications"
+import {
+  MIN_SCAN_INTERVAL_MINUTES,
+  normalizeScanIntervalMinutes
+} from "~/services/scanner/schedule"
 import type {
   AiProviderRecord,
   AiQueueRecord,
@@ -1350,6 +1354,10 @@ function WatcherSettings({ watcher }: { watcher: WatcherRecord }) {
           label="Watcher notifications"
           onChange={(notifications_enabled) => update({ notifications_enabled })}
         />
+        <ScanIntervalField
+          onChange={(scan_interval_minutes) => update({ scan_interval_minutes })}
+          value={watcher.scan_interval_minutes}
+        />
         <ThresholdField
           label="Relevance"
           onChange={(relevance_threshold) => update({ relevance_threshold })}
@@ -1373,6 +1381,49 @@ function WatcherSettings({ watcher }: { watcher: WatcherRecord }) {
         />
       </div>
     </Panel>
+  )
+}
+
+function ScanIntervalField(props: {
+  value: number
+  onChange: (value: number) => void
+}) {
+  const normalizedValue = normalizeScanIntervalMinutes(props.value)
+  const [draftValue, setDraftValue] = useState(String(normalizedValue))
+
+  useEffect(() => {
+    setDraftValue(String(normalizedValue))
+  }, [normalizedValue])
+
+  function commit(value: string) {
+    const numericValue = Number(value)
+    const nextValue = normalizeScanIntervalMinutes(numericValue)
+    setDraftValue(String(nextValue))
+    props.onChange(nextValue)
+  }
+
+  return (
+    <Field
+      hint={`Minimum ${MIN_SCAN_INTERVAL_MINUTES} minutes. Scan Now still runs immediately.`}
+      label="Scan interval">
+      <div className="flex items-center gap-2">
+        <TextInput
+          min={MIN_SCAN_INTERVAL_MINUTES}
+          onBlur={() => commit(draftValue)}
+          onChange={(value) => {
+            setDraftValue(value)
+            const numericValue = Number(value)
+            if (numericValue >= MIN_SCAN_INTERVAL_MINUTES) {
+              props.onChange(normalizeScanIntervalMinutes(numericValue))
+            }
+          }}
+          step={1}
+          type="number"
+          value={draftValue}
+        />
+        <span className="shrink-0 text-sm text-zinc-500">minutes</span>
+      </div>
+    </Field>
   )
 }
 

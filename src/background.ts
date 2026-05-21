@@ -2,32 +2,38 @@ import { initializeDatabase } from "~/db/bootstrap"
 import { db } from "~/db/schema"
 import { getAiQueueSummary, processAiQueue } from "~/services/ai/queue/queue"
 import { handleNotificationClicked } from "~/services/notifications/notifications"
+import { SCAN_SCHEDULER_POLL_MINUTES } from "~/services/scanner/schedule"
 import { scanEnabledWatchers, scanWatcher } from "~/services/scanner/scanner"
 
 initializeDatabase().catch((error) => {
   console.error("[ThreadWise] database initialization failed", error)
 })
 
-chrome.runtime.onInstalled.addListener(() => {
-  initializeDatabase().catch((error) => {
-    console.error("[ThreadWise] install initialization failed", error)
-  })
-
+function scheduleAlarms() {
   chrome.alarms.create("threadwise:scan", {
     delayInMinutes: 1,
-    periodInMinutes: 15
+    periodInMinutes: SCAN_SCHEDULER_POLL_MINUTES
   })
 
   chrome.alarms.create("threadwise:ai-queue", {
     delayInMinutes: 1,
     periodInMinutes: 1
   })
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  initializeDatabase().catch((error) => {
+    console.error("[ThreadWise] install initialization failed", error)
+  })
+
+  scheduleAlarms()
 })
 
 chrome.runtime.onStartup.addListener(() => {
   initializeDatabase().catch((error) => {
     console.error("[ThreadWise] startup initialization failed", error)
   })
+  scheduleAlarms()
 })
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -83,7 +89,7 @@ async function handleMessage(message: ThreadWiseRuntimeMessage) {
       return { run }
     }
 
-    const runs = await scanEnabledWatchers()
+    const runs = await scanEnabledWatchers({ force: true })
     return { runs }
   }
 

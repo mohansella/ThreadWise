@@ -6,6 +6,7 @@ import type {
 } from "~/types/domain"
 import { createId } from "~/utils/id"
 import { nowIso } from "~/utils/time"
+import { DEFAULT_SCAN_INTERVAL_MINUTES } from "~/services/scanner/schedule"
 
 import { db } from "./schema"
 import { getWatcherTemplate } from "./templates"
@@ -19,7 +20,7 @@ export function createDefaultSettings(now = nowIso()): SettingsRecord {
     active_provider_id: MOCK_PROVIDER_ID,
     global_notifications_enabled: true,
     verbose_logging_enabled: false,
-    default_scan_interval_minutes: 30,
+    default_scan_interval_minutes: DEFAULT_SCAN_INTERVAL_MINUTES,
     default_ai_requests_per_minute: 6,
     default_ai_batch_size: 5,
     onboarding_completed: false,
@@ -121,7 +122,7 @@ export async function createWatcherFromTemplate(input: {
     relevance_threshold: 75,
     urgency_threshold: 40,
     confidence_threshold: 60,
-    scan_interval_minutes: 30,
+    scan_interval_minutes: DEFAULT_SCAN_INTERVAL_MINUTES,
     max_post_age_hours: 24,
     enabled: input.enabled ?? false,
     notifications_enabled: true,
