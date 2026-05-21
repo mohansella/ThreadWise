@@ -4,7 +4,8 @@ import {
   Bell,
   Bookmark,
   Bug,
-  Check,
+  ChevronDown,
+  ChevronRight,
   Clock3,
   ExternalLink,
   EyeOff,
@@ -663,11 +664,6 @@ function SettingsView(props: {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <div className="space-y-4">
-        <OnboardingPanel
-          provider={props.activeProvider}
-          settings={props.settings}
-          watchers={props.watchers}
-        />
         <ProviderSettings provider={props.activeProvider} />
         <WatcherCreator onCreated={props.onWatcherCreated} />
         {props.selectedWatcher ? (
@@ -675,6 +671,10 @@ function SettingsView(props: {
         ) : null}
       </div>
       <div className="space-y-4">
+        <OnboardingPanel
+          provider={props.activeProvider}
+          watchers={props.watchers}
+        />
         <NotificationSettings
           history={props.notificationHistory}
           settings={props.settings}
@@ -686,51 +686,78 @@ function SettingsView(props: {
 }
 
 function OnboardingPanel(props: {
-  settings: SettingsRecord
   provider: AiProviderRecord
   watchers: WatcherRecord[]
 }) {
-  const hasProvider =
-    props.provider.provider_type === "mock" ||
-    props.provider.api_key_encrypted_or_local.length > 0
+  const hasProvider = isProviderConfigured(props.provider)
 
   return (
     <Panel className="p-5">
-      <p className="text-sm leading-6 text-zinc-300">
-        ThreadWise watches your favorite Reddit communities and alerts you only
-        when a thread truly matches your intent.
-      </p>
-      <div className="mt-4 grid gap-2 md:grid-cols-4">
-        <StepDone label="AI provider" done={hasProvider} />
-        <StepDone label="Watcher" done={props.watchers.length > 0} />
-        <StepDone
+      <h2 className="font-semibold">Setup Status</h2>
+      <div className="mt-4 space-y-2">
+        <SetupStatusItem
+          done={hasProvider}
+          label="AI provider"
+          status={hasProvider ? "Configured" : "Needs provider"}
+        />
+        <SetupStatusItem
+          done={props.watchers.length > 0}
+          label="Watcher"
+          status={props.watchers.length > 0 ? "Created" : "Not created"}
+        />
+        <SetupStatusItem
           label="Thresholds"
           done={props.watchers.some((watcher) => watcher.relevance_threshold > 0)}
+          status={
+            props.watchers.some((watcher) => watcher.relevance_threshold > 0)
+              ? "Set"
+              : "Not set"
+          }
         />
-        <StepDone
+        <SetupStatusItem
           label="Enabled"
           done={props.watchers.some((watcher) => watcher.enabled)}
+          status={
+            props.watchers.some((watcher) => watcher.enabled)
+              ? "Scanning"
+              : "Paused"
+          }
         />
       </div>
     </Panel>
   )
 }
 
-function StepDone(props: { label: string; done: boolean }) {
+function SetupStatusItem(props: {
+  label: string
+  done: boolean
+  status: string
+}) {
   return (
-    <div className="flex items-center gap-2 rounded-md bg-white/[0.035] px-3 py-2 text-sm">
-      <span
-        className={`flex h-5 w-5 items-center justify-center rounded-full ${
-          props.done ? "bg-signal-green text-graphite-950" : "bg-zinc-700 text-zinc-400"
-        }`}>
-        {props.done ? <Check size={13} /> : null}
+    <div className="flex items-center justify-between gap-3 rounded-md bg-white/[0.035] px-3 py-2 text-sm">
+      <span className="flex items-center gap-2">
+        <span
+          className={`h-2.5 w-2.5 rounded-full ${
+            props.done ? "bg-signal-green" : "bg-zinc-600"
+          }`}
+        />
+        <span className="text-zinc-200">{props.label}</span>
       </span>
-      {props.label}
+      <span
+        className={`rounded-md px-2 py-1 text-xs ${
+          props.done
+            ? "bg-signal-green/10 text-signal-green"
+            : "bg-white/[0.05] text-zinc-500"
+        }`}>
+        {props.status}
+      </span>
     </div>
   )
 }
 
 function ProviderSettings({ provider }: { provider: AiProviderRecord }) {
+  const configured = isProviderConfigured(provider)
+  const [expanded, setExpanded] = useState(!configured)
   const [providerType, setProviderType] = useState<ProviderType>(provider.provider_type)
   const [displayName, setDisplayName] = useState(provider.display_name)
   const [baseUrl, setBaseUrl] = useState(provider.base_url)
@@ -750,6 +777,7 @@ function ProviderSettings({ provider }: { provider: AiProviderRecord }) {
     setModel(provider.model)
     setRpm(String(provider.requests_per_minute))
     setBatchSize(String(provider.max_batch_size) as "3" | "5" | "10")
+    setExpanded(!isProviderConfigured(provider))
   }, [provider])
 
   function applyPreset(type: ProviderType) {
@@ -805,6 +833,7 @@ function ProviderSettings({ provider }: { provider: AiProviderRecord }) {
     })
     setApiKey("")
     setStatus("Provider saved")
+    setExpanded(!isProviderConfigured(record))
   }
 
   async function testProvider() {
@@ -822,6 +851,40 @@ function ProviderSettings({ provider }: { provider: AiProviderRecord }) {
     }
   }
 
+  if (!expanded) {
+    return (
+      <Panel className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">AI Provider</h2>
+            <p className="mt-1 text-sm text-zinc-400">
+              {provider.display_name} • {provider.model}
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Shared across all watchers • Saved key:{" "}
+              {maskSecret(provider.api_key_encrypted_or_local)}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button disabled={testing} onClick={testProvider}>
+              {testing ? (
+                <Loader2 className="animate-spin" size={15} />
+              ) : (
+                <Bug size={15} />
+              )}
+              Test
+            </Button>
+            <Button onClick={() => setExpanded(true)}>
+              <ChevronDown size={15} />
+              Edit
+            </Button>
+          </div>
+        </div>
+        {status ? <p className="mt-3 text-sm text-zinc-400">{status}</p> : null}
+      </Panel>
+    )
+  }
+
   return (
     <Panel className="p-5">
       <div className="flex items-center justify-between gap-3">
@@ -831,10 +894,18 @@ function ProviderSettings({ provider }: { provider: AiProviderRecord }) {
             Saved key: {maskSecret(provider.api_key_encrypted_or_local)}
           </p>
         </div>
-        <Button disabled={testing} onClick={testProvider}>
-          {testing ? <Loader2 className="animate-spin" size={15} /> : <Bug size={15} />}
-          Test
-        </Button>
+        <div className="flex gap-2">
+          <Button disabled={testing} onClick={testProvider}>
+            {testing ? <Loader2 className="animate-spin" size={15} /> : <Bug size={15} />}
+            Test
+          </Button>
+          {configured ? (
+            <Button onClick={() => setExpanded(false)}>
+              <ChevronRight size={15} />
+              Collapse
+            </Button>
+          ) : null}
+        </div>
       </div>
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <Field label="Provider type">
@@ -1204,6 +1275,16 @@ async function requestProviderPermission(baseUrl: string): Promise<void> {
   } catch {
     // Invalid URLs will be surfaced by the provider test/save flow.
   }
+}
+
+function isProviderConfigured(provider: AiProviderRecord): boolean {
+  if (provider.provider_type === "mock") return false
+  if (isLocalProviderUrl(provider.base_url)) return true
+  return provider.api_key_encrypted_or_local.length > 0
+}
+
+function isLocalProviderUrl(baseUrl: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(baseUrl)
 }
 
 function summarizeQueue(queueItems: AiQueueRecord[]) {
