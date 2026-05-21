@@ -1,0 +1,7 @@
+node_modules
+build
+.plasmo
+.parcel-cache
+.DS_Store
+*.log
+*.tsbuildinfo
