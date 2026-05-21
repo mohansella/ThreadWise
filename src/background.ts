@@ -1,5 +1,7 @@
 import { initializeDatabase } from "~/db/bootstrap"
 import { processAiQueue } from "~/services/ai/queue/queue"
+import { handleNotificationClicked } from "~/services/notifications/notifications"
+import { scanEnabledWatchers } from "~/services/scanner/scanner"
 
 initializeDatabase().catch((error) => {
   console.error("[ThreadWise] database initialization failed", error)
@@ -29,7 +31,11 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "threadwise:scan") {
-    console.info("[ThreadWise] scan alarm triggered")
+    scanEnabledWatchers()
+      .then(() => processAiQueue({ maxBatches: 1 }))
+      .catch((error) => {
+        console.error("[ThreadWise] scan alarm failed", error)
+      })
   }
 
   if (alarm.name === "threadwise:ai-queue") {
@@ -37,4 +43,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       console.error("[ThreadWise] AI queue processing failed", error)
     })
   }
+})
+
+chrome.notifications.onClicked.addListener((notificationId) => {
+  handleNotificationClicked(notificationId).catch((error) => {
+    console.error("[ThreadWise] notification click failed", error)
+  })
 })

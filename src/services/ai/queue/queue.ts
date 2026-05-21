@@ -12,6 +12,7 @@ import { createId } from "~/utils/id"
 import { addMinutes, nowIso } from "~/utils/time"
 
 import { logError, logInfo, logWarning } from "~/services/logging/logger"
+import { dispatchNotificationsForScores } from "~/services/notifications/notifications"
 
 import { createAiProvider } from "../providers"
 import { toScorePostInput } from "../types"
@@ -161,17 +162,17 @@ async function runQueueItem(
     const result = await aiProvider.scorePosts(input)
     const completedAt = nowIso()
 
+    const scoreRecords = result.results.map((score) =>
+      toAiScoreRecord(score, watcher, provider, posts, completedAt)
+    )
+
     await db.transaction(
       "rw",
       db.aiScores,
       db.aiQueue,
       db.scanRuns,
       async () => {
-        await db.aiScores.bulkPut(
-          result.results.map((score) =>
-            toAiScoreRecord(score, watcher, provider, posts, completedAt)
-          )
-        )
+        await db.aiScores.bulkPut(scoreRecords)
 
         await db.aiQueue.update(queueItem.id, {
           status: "completed",
@@ -191,9 +192,18 @@ async function runQueueItem(
       }
     )
 
+    const notificationsSent = await dispatchNotificationsForScores(
+      watcher,
+      scoreRecords
+    )
+    await incrementScanRun(queueItem.scan_run_id, {
+      notifications_sent: notificationsSent
+    })
+
     await logInfo("ai", "AI score received", {
       queue_id: queueItem.id,
-      scores: result.results.length
+      scores: result.results.length,
+      notifications_sent: notificationsSent
     })
   } catch (error) {
     await handleQueueFailure(queueItem, error)
@@ -467,6 +477,7 @@ async function incrementScanRun(
     ai_requests_failed: number
     ai_scored_posts: number
     threshold_matches: number
+    notifications_sent: number
     ai_errors: string[]
   }>
 ): Promise<void> {
@@ -483,6 +494,8 @@ async function incrementScanRun(
     ai_scored_posts: run.ai_scored_posts + (patch.ai_scored_posts ?? 0),
     threshold_matches:
       run.threshold_matches + (patch.threshold_matches ?? 0),
+    notifications_sent:
+      run.notifications_sent + (patch.notifications_sent ?? 0),
     ai_errors: [...run.ai_errors, ...(patch.ai_errors ?? [])]
   })
 }
